@@ -1,0 +1,60 @@
+-4981989204366266269	
+KIND __kind__
+89	Datastore	
+3
+34	34	18	1,889	1,889	0
+-8238509974482257805	
+COLLECTION * SELECT __collection__ PageSize 300
+89	Firestore	
+5
+19	19	10	1,9	1,9	0
+-1680687354574239320	
+COLLECTION /planning_conducteurs SELECT _none_ PageSize 300
+47	Firestore	
+1
+142	142	142	1	1	0
+-4106869863896365814	
+COLLECTION /reservations SELECT _none_ PageSize 300
+45	Firestore	
+7
+166	166	166	1	1	0
+6194523877492356017	
+COLLECTION /slots SELECT _none_ PageSize 300
+41	Firestore	
+1
+301	301	300	1,003	1,003	0
+-3437854500477883376	
+COLLECTION /planning_conducteurs/* SELECT __collection__ PageSize 300
+39	Firestore	
+4
+0	0	0	N/A	N/A	0
+5905760539720143618	
+COLLECTION /planning_seances SELECT _none_ PageSize 300
+38	Firestore	
+3
+301	301	300	1,003	1,003	0
+-2291835255439423932	
+COLLECTION /boutique_commandes SELECT _none_ PageSize 300
+22	Firestore	
+2
+5	5	5	1	1	0
+-4489356056200414240	
+COLLECTION /planning_seances/* SELECT __collection__ PageSize 300
+15	Firestore	
+9
+0	0	0	N/A	N/A	0
+2753583560025503759	
+COLLECTION /boutique_commandes/* SELECT __collection__ PageSize 300
+14	Firestore	
+22
+0	0	0	N/A	N/A	0
+4617260673567634100	
+COLLECTION /slots/* SELECT __collection__ PageSize 300
+13	Firestore	
+1
+0	0	0	N/A	N/A	0
+-1535722997142852908	
+COLLECTION /reservations/* SELECT __collection__ PageSize 300
+10	Firestore	
+210
+0	0	0	N/A	N/A	
