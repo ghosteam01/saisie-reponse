@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACHKOUN — Saisie rapide des questions</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1115;
+    color: #e8e8e8;
+    margin: 0;
+    padding: 14px;
+    max-width: 700px;
+    margin: 0 auto;
+    padding-bottom: 60px;
+  }
+  h1 { font-size: 19px; margin-top: 18px; }
+  h2 { font-size: 15px; margin-top: 22px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+  .card { background: #1a1d24; border: 1px solid #2a2d35; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  label { display: block; margin-top: 8px; font-size: 12px; color: #aaa; }
+  input, select { width: 100%; padding: 10px; margin-top: 4px; background: #0f1115; border: 1px solid #333; border-radius: 6px; color: #fff; font-size: 14px; }
+  button { margin-top: 10px; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; }
+  button.secondary { background: #444; }
+  button.danger { background: #b91c1c; }
+  button.small { padding: 6px 10px; font-size: 12px; margin: 3px; width: auto; }
+  .status { margin-top: 8px; font-size: 12px; padding: 6px 8px; border-radius: 6px; display: none; }
+  .status.ok { background: #14532d; color: #bbf7d0; display: block; }
+  .status.err { background: #7f1d1d; color: #fecaca; display: block; }
+  .status.info { background: #1e3a5f; color: #bfdbfe; display: block; }
+  .config-warning { background: #78350f; color: #fed7aa; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 18px; }
+
+  /* Bandeau thèmes rapides */
+  .themes-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .theme-btn {
+    padding: 10px 14px; border-radius: 20px; background: #2a2d35; border: 2px solid #3a3d45;
+    color: #ddd; font-size: 13px; margin: 0;
+  }
+  .theme-btn.active { background: #f59e0b; border-color: #f59e0b; color: #1a1200; font-weight: 700; }
+
+  /* Clavier réponse 1-4 */
+  .answer-pad { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .answer-btn { padding: 22px 0; font-size: 22px; font-weight: 700; border-radius: 12px; background: #1e293b; border: 2px solid #334155; color: #fff; }
+  .answer-btn:active { background: #3b82f6; }
+
+  .current-info { text-align: center; padding: 10px; background: #111827; border-radius: 8px; margin-bottom: 10px; }
+  .current-info .serie { font-size: 13px; color: #9ca3af; }
+  .current-info .qnum { font-size: 28px; font-weight: 800; color: #f59e0b; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  th, td { border: 1px solid #333; padding: 6px; text-align: left; }
+  th { background: #1e293b; }
+  td input, td select { padding: 5px; font-size: 12px; margin: 0; }
+  .del-btn { background: #b91c1c; padding: 4px 8px; font-size: 11px; width: auto; margin: 0; }
+</style>
+</head>
+<body>
+
+<h1>⚡ ACHKOUN — Saisie rapide des questions</h1>
+
+<!-- ============ 1. GESTION DES THEMES ============ -->
+<div class="card">
+  <h2>1. Thèmes (à prédéfinir avant de saisir des questions)</h2>
+  <label>Nom du nouveau thème</label>
+  <input type="text" id="newThemeName" placeholder="Ex: priorites">
+  <button id="btnAddTheme">Ajouter le thème</button>
+  <div class="status" id="statusTheme"></div>
+  <div id="themesList" class="themes-grid" style="margin-top:12px;"></div>
+</div>
+
+<!-- ============ 2. CHOIX DE LA SERIE ============ -->
+<div class="card">
+  <h2>2. Choisir la série à saisir</h2>
+  <label>Numéro de série</label>
+  <input type="number" id="serieSelect" min="1" max="31" placeholder="Ex: 1">
+  <button id="btnStartSerie">Démarrer la saisie de cette série</button>
+  <div class="status" id="statusSerie"></div>
+</div>
+
+<!-- ============ 3. SAISIE RAPIDE ============ -->
+<div class="card" id="quickEntryCard" style="display:none;">
+  <h2>3. Saisie rapide</h2>
+  <div class="current-info">
+    <div class="serie">Série <span id="curSerie">-</span></div>
+    <div class="qnum">Question n° <span id="curQNum">1</span></div>
+  </div>
+
+  <label>Thème de cette question</label>
+  <div class="themes-grid" id="quickThemesGrid"></div>
+
+  <label style="margin-top:14px;">Bonne réponse</label>
+  <div class="answer-pad">
+    <button class="answer-btn" data-ans="1">1</button>
+    <button class="answer-btn" data-ans="2">2</button>
+    <button class="answer-btn" data-ans="3">3</button>
+    <button class="answer-btn" data-ans="4">4</button>
+  </div>
+
+  <button class="secondary" id="btnUndo" style="margin-top:14px;">↩️ Annuler la dernière saisie</button>
+  <button class="danger" id="btnFinishSerie">Terminer cette série</button>
+  <div class="status" id="statusEntry"></div>
+</div>
+
+<!-- ============ 4. LISTE MODIFIABLE ============ -->
+<div class="card">
+  <h2>4. Questions déjà saisies (modifiable)</h2>
+  <label>Filtrer par série</label>
+  <input type="number" id="filterSerie" min="1" max="31" placeholder="Ex: 1">
+  <button class="secondary" id="btnLoadList">Charger la liste</button>
+  <div class="status" id="statusList"></div>
+  <div style="overflow-x:auto;">
+    <table id="questionsTable" style="display:none;">
+      <thead><tr><th>N°</th><th>Thème</th><th>Bonne rép.</th><th></th></tr></thead>
+      <tbody id="questionsTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyA3lz0NW4ToKVtmLx27P3Y3iDKmFYpxNlg",
+  authDomain: "achkoune-pedagogie.firebaseapp.com",
+  projectId: "achkoune-pedagogie",
+  storageBucket: "achkoune-pedagogie.firebasestorage.app",
+  messagingSenderId: "261834863377",
+  appId: "1:261834863377:web:1237a80414860bb54f12b0"
+};
+
+let db = null;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+} catch (e) { console.error("Firebase non initialisé :", e); }
+
+function showStatus(id, type, message) {
+  const el = document.getElementById(id);
+  el.className = "status " + type;
+  el.textContent = message;
+}
+function checkDb() {
+  if (!db) { alert("Configure d'abord firebaseConfig en bas du fichier, puis recharge la page."); return false; }
+  return true;
+}
+
+let themes = [];
+let currentSerie = null;
+let currentQNum = 1;
+let selectedTheme = null;
+let lastSavedId = null;
+
+// ---- 1. THEMES ----
+async function loadThemes() {
+  if (!db) return;
+  const snap = await db.collection("achkoun_themes").orderBy("nom").get();
+  themes = snap.docs.map(d => ({ id: d.id, nom: d.data().nom }));
+  renderThemes();
+}
+
+function renderThemes() {
+  const list = document.getElementById("themesList");
+  list.innerHTML = "";
+  themes.forEach(t => {
+    const b = document.createElement("button");
+    b.className = "theme-btn small";
+    b.textContent = t.nom;
+    list.appendChild(b);
+  });
+  renderQuickThemes();
+}
+
+function renderQuickThemes() {
+  const grid = document.getElementById("quickThemesGrid");
+  grid.innerHTML = "";
+  themes.forEach(t => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "theme-btn" + (selectedTheme === t.nom ? " active" : "");
+    b.textContent = t.nom;
+    b.addEventListener("click", () => {
+      selectedTheme = t.nom;
+      renderQuickThemes();
+    });
+    grid.appendChild(b);
+  });
+}
+
+document.getElementById("btnAddTheme").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  const nom = document.getElementById("newThemeName").value.trim().toLowerCase();
+  if (!nom) { showStatus("statusTheme", "err", "Entre un nom de thème."); return; }
+  try {
+    await db.collection("achkoun_themes").add({ nom });
+    document.getElementById("newThemeName").value = "";
+    showStatus("statusTheme", "ok", "✅ Thème \"" + nom + "\" ajouté.");
+    await loadThemes();
+  } catch (e) {
+    showStatus("statusTheme", "err", "Erreur : " + e.message);
+  }
+});
+
+// ---- 2. DEMARRER UNE SERIE ----
+document.getElementById("btnStartSerie").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  const serieVal = Number(document.getElementById("serieSelect").value);
+  if (!serieVal) { showStatus("statusSerie", "err", "Indique un numéro de série."); return; }
+  if (themes.length === 0) { showStatus("statusSerie", "err", "Ajoute au moins un thème avant de commencer."); return; }
+
+  // On regarde le nombre de questions déjà saisies pour cette série, pour reprendre à la suite
+  const snap = await db.collection("achkoun_questions").where("numeroSerie", "==", serieVal).get();
+  currentSerie = serieVal;
+  currentQNum = snap.size + 1;
+  selectedTheme = null;
+
+  document.getElementById("curSerie").textContent = currentSerie;
+  document.getElementById("curQNum").textContent = currentQNum;
+  document.getElementById("quickEntryCard").style.display = "block";
+  renderQuickThemes();
+  showStatus("statusSerie", "ok", "Série " + serieVal + " — reprise à la question " + currentQNum + ".");
+});
+
+// ---- 3. SAISIE RAPIDE (clavier 1-4) ----
+document.querySelectorAll(".answer-btn").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    if (!checkDb()) return;
+    if (!currentSerie) { showStatus("statusEntry", "err", "Démarre d'abord une série."); return; }
+    if (!selectedTheme) { showStatus("statusEntry", "err", "Choisis un thème pour cette question."); return; }
+
+    const bonneReponse = Number(btn.dataset.ans);
+    try {
+      const themePrefix = selectedTheme.substring(0, 3).toUpperCase();
+      const ref = await db.collection("achkoun_questions").add({
+        numeroSerie: currentSerie,
+        numeroQuestion: currentQNum,
+        theme: selectedTheme,
+        bonneReponse,
+        idInterne: "ACH-" + themePrefix + "-" + String(currentSerie).padStart(2, "0") + String(currentQNum).padStart(2, "0")
+      });
+      lastSavedId = ref.id;
+      showStatus("statusEntry", "ok", "✅ Question " + currentQNum + " enregistrée (thème: " + selectedTheme + ", réponse: " + bonneReponse + ")");
+      currentQNum++;
+      document.getElementById("curQNum").textContent = currentQNum;
+      // Le thème reste sélectionné pour la question suivante (souvent le même thème se répète) — change-le si besoin
+    } catch (e) {
+      showStatus("statusEntry", "err", "Erreur : " + e.message);
+    }
+  });
+});
+
+document.getElementById("btnUndo").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  if (!lastSavedId) { showStatus("statusEntry", "err", "Rien à annuler."); return; }
+  try {
+    await db.collection("achkoun_questions").doc(lastSavedId).delete();
+    currentQNum = Math.max(1, currentQNum - 1);
+    document.getElementById("curQNum").textContent = currentQNum;
+    showStatus("statusEntry", "ok", "↩️ Dernière question supprimée. Reprise à la question " + currentQNum + ".");
+    lastSavedId = null;
+  } catch (e) {
+    showStatus("statusEntry", "err", "Erreur : " + e.message);
+  }
+});
+
+document.getElementById("btnFinishSerie").addEventListener("click", () => {
+  document.getElementById("quickEntryCard").style.display = "none";
+  currentSerie = null;
+  showStatus("statusSerie", "ok", "Série terminée. Choisis-en une autre pour continuer.");
+});
+
+// ---- 4. LISTE MODIFIABLE ----
+document.getElementById("btnLoadList").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  const serieVal = Number(document.getElementById("filterSerie").value);
+  if (!serieVal) { showStatus("statusList", "err", "Indique une série à charger."); return; }
+  showStatus("statusList", "info", "Chargement...");
+  try {
+    const snap = await db.collection("achkoun_questions")
+      .where("numeroSerie", "==", serieVal)
+      .orderBy("numeroQuestion")
+      .get();
+    const tbody = document.getElementById("questionsTableBody");
+    tbody.innerHTML = "";
+    snap.forEach(docSnap => {
+      const q = docSnap.data();
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${q.numeroQuestion}</td>
+        <td>
+          <select data-id="${docSnap.id}" data-field="theme">
+            ${themes.map(t => `<option value="${t.nom}" ${t.nom === q.theme ? "selected" : ""}>${t.nom}</option>`).join("")}
+          </select>
+        </td>
+        <td>
+          <select data-id="${docSnap.id}" data-field="bonneReponse">
+            ${[1,2,3,4].map(n => `<option value="${n}" ${n === q.bonneReponse ? "selected" : ""}>${n}</option>`).join("")}
+          </select>
+        </td>
+        <td><button class="del-btn" data-id="${docSnap.id}">Suppr.</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById("questionsTable").style.display = snap.size ? "table" : "none";
+    showStatus("statusList", "ok", snap.size + " question(s) chargée(s).");
+
+    // Modification en direct
+    tbody.querySelectorAll("select").forEach(sel => {
+      sel.addEventListener("change", async () => {
+        const id = sel.dataset.id;
+        const field = sel.dataset.field;
+        let value = sel.value;
+        if (field === "bonneReponse") value = Number(value);
+        try {
+          await db.collection("achkoun_questions").doc(id).update({ [field]: value });
+          showStatus("statusList", "ok", "✅ Question modifiée.");
+        } catch (e) {
+          showStatus("statusList", "err", "Erreur : " + e.message);
+        }
+      });
+    });
+    tbody.querySelectorAll(".del-btn").forEach(b => {
+      b.addEventListener("click", async () => {
+        if (!confirm("Supprimer cette question ?")) return;
+        try {
+          await db.collection("achkoun_questions").doc(b.dataset.id).delete();
+          b.closest("tr").remove();
+          showStatus("statusList", "ok", "✅ Question supprimée.");
+        } catch (e) {
+          showStatus("statusList", "err", "Erreur : " + e.message);
+        }
+      });
+    });
+  } catch (e) {
+    showStatus("statusList", "err", "Erreur : " + e.message + " (il faut peut-être créer l'index composite numeroSerie+numeroQuestion dans Firestore, le lien apparaît dans la console si besoin)");
+  }
+});
+
+// Chargement initial
+if (db) loadThemes();
+</script>
+
+</body>
+</html>
