@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Corrigés Séries — ACHKOUN</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--tx:#f1f5f9;--mut:#94a3b8;--ac:#3b82f6;--ok:#22c55e;--ko:#ef4444;--warn:#f59e0b}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0 auto;background:var(--bg);color:var(--tx);font-family:-apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom);max-width:560px}
+h1{font-size:20px;margin:16px 0 4px}h2{font-size:17px;margin:12px 0}
+.card{background:var(--card);border-radius:14px;padding:14px;margin:10px 0}
+input,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #334155;background:#0f172a;color:var(--tx);font-size:16px;margin:6px 0;font-family:inherit}
+button{font:inherit;border:0;border-radius:12px;padding:12px 14px;background:#334155;color:var(--tx);cursor:pointer}
+button:disabled{opacity:.4}
+button.p{background:var(--ac)}button.g{background:var(--ok);color:#052e16;font-weight:700}button.r{background:var(--ko)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1}
+.mut{color:var(--mut);font-size:13px}
+.big{font-size:44px;font-weight:800;text-align:center;letter-spacing:6px;min-height:64px;padding:8px}
+.pad{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0}
+.pad button{font-size:34px;font-weight:700;padding:22px 0}
+.pad button.on{background:var(--ac)}
+.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:10px 0}
+.grid button{padding:10px 0;font-size:14px;border-radius:8px}
+.grid .set{background:#14532d}.grid .part{background:#78350f}.grid .cur{outline:2px solid var(--ac)}
+.bar{height:8px;background:#334155;border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
+.score{font-size:56px;font-weight:800;text-align:center}
+.item{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #334155;font-size:15px}
+.ok{color:var(--ok)}.ko{color:var(--ko)}.hide{display:none}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ===== CONFIG FIREBASE =====
+   Colle ici la config du projet Firebase ACHKOUN Pédagogie, ou laisse null
+   et colle-la depuis l'écran ⚙ de l'application (enregistrée sur l'appareil). */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA3lz0NW4ToKVtmLx27P3Y3iDKmFYpxNlg",
+  authDomain: "achkoune-pedagogie.firebaseapp.com",
+  projectId: "achkoune-pedagogie",
+  storageBucket: "achkoune-pedagogie.firebasestorage.app",
+  messagingSenderId: "261834863377",
+  appId: "1:261834863377:web:1237a80414860bb54f12b0"
+};
+const COL = 'achkoun_series';   // 1 document par série : id = numéro de série
+
+/* ===== ÉTAT LOCAL ===== */
+let S={series:{},lastSync:0,history:[],max:31,themes:[],thDirty:false};
+try{const d=JSON.parse(localStorage.getItem('achkoun_corriges')||'null');if(d)S=Object.assign(S,d)}catch(e){}
+const save=()=>{try{localStorage.setItem('achkoun_corriges',JSON.stringify(S))}catch(e){}};
+const $=s=>document.querySelector(s);
+const norm=s=>[...new Set(String(s).replace(/[^1-4]/g,'').split(''))].sort().join('');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let mode='home',N=null,idx=0,cur='',answers=[],cand='',msg='',busy=false;
+const R=()=>S.series[N];
+const done=s=>s&&s.rep.length===s.nb&&s.rep.every(Boolean);
+const filled=s=>s?s.rep.filter(Boolean).length:0;
+const pending=()=>Object.values(S.series).filter(s=>s.dirty).length+(S.thDirty?1:0);
+const themeName=id=>(S.themes.find(t=>t.id===id)||{}).nom||'';
+const ensureTh=s=>{s.th=s.th||[];while(s.th.length<s.nb)s.th.push('');s.th.length=s.nb};
+const fullS=s=>done(s)&&(ensureTh(s),s.th.every(Boolean));
+let curTh='',themesBack='home';
+
+/* ===== FIREBASE ===== */
+let db=null,fbState='none';
+function loadCfg(){try{return JSON.parse(localStorage.getItem('achkoun_fbcfg')||'null')}catch(e){return null}}
+function parseCfg(t){
+  const o={};
+  for(const k of ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId']){
+    const m=t.match(new RegExp(k+'["\']?\\s*:\\s*["\']([^"\']+)["\']'));if(m)o[k]=m[1];
+  }
+  return(o.projectId&&o.apiKey)?o:null;
+}
+function initFB(){
+  db=null;
+  const c=FIREBASE_CONFIG||loadCfg();
+  if(!c){fbState='none';return}
+  if(typeof firebase==='undefined'){fbState='off';return}
+  try{if(!firebase.apps.length)firebase.initializeApp(c);db=firebase.firestore();fbState='ok'}
+  catch(e){fbState='err';msg=e.message}
+}
+async function pushOne(n){
+  const s=S.series[n];if(!db||!s)return false;ensureTh(s);
+  try{
+    await db.collection(COL).doc(String(n)).set({numero:+n,nbQuestions:s.nb,reponses:s.rep,themes:s.th,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    s.dirty=false;save();return true;
+  }catch(e){msg='⚠ '+e.message;return false}
+}
+async function sync(){
+  if(!db){msg='Firebase non connecté';render();return}
+  busy=true;msg='Synchronisation…';render();
+  try{
+    for(const k of Object.keys(S.series)){if(S.series[k].dirty){const ok=await pushOne(k);if(!ok)throw new Error(msg.replace('⚠ ',''))}}
+    const tref=db.collection('achkoun_config').doc('themes');
+    if(S.thDirty){await tref.set({liste:S.themes,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});S.thDirty=false}
+    else{const td=await tref.get();if(td.exists)S.themes=td.data().liste||[]}
+    let q=db.collection(COL);
+    if(S.lastSync)q=q.where('updatedAt','>',firebase.firestore.Timestamp.fromMillis(S.lastSync));
+    const snap=await q.get();let c=0;
+    snap.forEach(d=>{
+      const v=d.data(),ts=v.updatedAt?v.updatedAt.toMillis():0;
+      S.series[d.id]={nb:v.nbQuestions,rep:v.reponses||[],th:v.themes||[],dirty:false};ensureTh(S.series[d.id]);
+      S.lastSync=Math.max(S.lastSync||0,ts);c++;
+    });
+    save();msg='✔ Synchronisé ('+c+' série(s) mise(s) à jour)';
+  }catch(e){msg='⚠ '+e.message}
+  busy=false;render();
+}
+
+async function pushThemes(){
+  save();
+  if(!db){msg='Thèmes enregistrés sur l\'appareil (pas encore envoyés)';return false}
+  try{await db.collection('achkoun_config').doc('themes').set({liste:S.themes,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});S.thDirty=false;save();msg='✔ Thèmes enregistrés dans Firebase';return true}
+  catch(e){msg='⚠ '+e.message;return false}
+}
+
+/* ===== RENDU ===== */
+function render(){
+  const a=$('#app');
+  a.innerHTML=({home,serie:serieView,key:keyView,start:startView,run:runView,res:resView,hist:histView,cfg:cfgView,themes:themesView}[mode])();
+}
+function pad(){return `<div class="pad">${[1,2,3,4].map(n=>`<button class="${cur.includes(n)?'on':''}" onclick="tog(${n})">${n}</button>`).join('')}</div>`}
+function tog(n){n=String(n);cur=cur.includes(n)?cur.replace(n,''):norm(cur+n);render()}
+function go(m){mode=m;render()}
+
+/* ----- ACCUEIL ----- */
+function statusBar(){
+  const m={none:'⚙ Firebase non configuré',off:'🔴 Firebase non chargé (hors ligne ?)',err:'⚠ Erreur Firebase',ok:'🟢 Firebase connecté'}[fbState];
+  return `<div class="card row" style="flex-wrap:nowrap"><div style="flex:4">${m}<div class="mut">${esc(msg)}${pending()?` · ${pending()} en attente d'envoi`:''}</div></div>
+  <button onclick="sync()" ${busy||!db?'disabled':''} style="flex:0">🔄</button><button onclick="go('cfg')" style="flex:0">⚙</button></div>`;
+}
+function home(){
+  const max=Math.max(S.max||31,...Object.keys(S.series).map(Number));
+  let g='';
+  for(let i=1;i<=max;i++){const s=S.series[i];g+=`<button class="${fullS(s)?'set':(s&&(filled(s)||(s.th||[]).some(Boolean)))?'part':''}" onclick="openSerie(${i})">${i}</button>`}
+  return `<h1>📝 Corrigés des séries</h1><div class="mut">Vert = réponses + thèmes complets · Orange = incomplet · Gris = vide</div>
+  ${statusBar()}
+  <div class="grid" style="grid-template-columns:repeat(6,1fr)">${g}</div>
+  <div class="row"><button onclick="S.max=${max+1};save();render()">＋ Série</button><button onclick="openThemes('home')">🏷 Thèmes (${S.themes.length})</button></div>
+  <div class="row" style="margin:8px 0 30px"><button onclick="go('hist')">📊 Historique (${S.history.length})</button></div>`;
+}
+function openSerie(n){N=String(n);if(!S.series[N])S.series[N]={nb:40,rep:Array(40).fill(''),th:Array(40).fill(''),dirty:false};ensureTh(S.series[N]);mode='serie';render()}
+
+/* ----- MENU SÉRIE ----- */
+function serieView(){
+  const s=R();
+  return `<h1>Série ${N}</h1>${statusBar()}
+  <div class="card"><b>${s.nb} questions</b><div class="mut">Réponses : ${filled(s)} / ${s.nb} · Thèmes : ${s.th.filter(Boolean).length} / ${s.nb}${s.dirty?' · ⏳ pas encore envoyé à Firebase':''}</div>
+  <div class="row" style="margin-top:12px"><button class="g" onclick="startQ()">▶ Passer</button><button class="p" onclick="editKey()">✏ Corrigé</button></div></div>
+  <button style="width:100%;margin-bottom:30px" onclick="go('home')">Retour</button>`;
+}
+
+/* ----- CORRIGÉ ----- */
+function loadQ(){const s=R();cur=s.rep[idx]||'';curTh=s.th[idx]||''}
+function editKey(){idx=0;loadQ();mode='key';render()}
+function keyView(){
+  const s=R();
+  const ths=S.themes.length?S.themes.map(x=>`<button class="${curTh===x.id?'p':''}" style="padding:9px 11px;font-size:14px" onclick="pickTh('${x.id}')">${esc(x.nom)}</button>`).join(''):'<span class="mut">Aucun thème défini — touche « Gérer ».</span>';
+  return `<h1>Série ${N} — Corrigé</h1>
+  <div class="row"><span class="mut" style="flex:2">Nombre de questions</span><input type="number" inputmode="numeric" min="1" max="40" value="${s.nb}" onchange="setNb(this.value)" style="flex:1"></div>
+  <div class="card"><div class="mut">Question ${idx+1} / ${s.nb} · touche la ou les bonnes réponses</div><div class="big">${cur||'—'}</div>${pad()}
+  <div class="mut" style="margin-top:6px">Thème de la question</div>
+  <div class="row" style="margin:6px 0">${ths}</div>
+  <div class="row"><button onclick="copyTh()" ${idx===0?'disabled':''}>↺ Thème précédent</button><button onclick="keySave();openThemes('key')">🏷 Gérer</button></div>
+  <div class="row" style="margin-top:8px"><button onclick="keyGo(-1)">◀ Préc.</button><button onclick="cur='';render()">Effacer</button><button class="g" onclick="keyGo(1)">Suivant ▶</button></div></div>
+  <div class="grid">${s.rep.map((k,i)=>`<button class="${k&&s.th[i]?'set':(k||s.th[i])?'part':''} ${i===idx?'cur':''}" onclick="keyJump(${i})">${i+1}</button>`).join('')}</div>
+  <button class="p" style="width:100%;margin-bottom:30px" onclick="finishKey()">💾 Enregistrer</button>`;
+}
+function pickTh(id){curTh=curTh===id?'':id;render()}
+function copyTh(){curTh=R().th[idx-1]||'';render()}
+function keySave(){const s=R();if((s.rep[idx]||'')!==cur||(s.th[idx]||'')!==curTh){s.rep[idx]=cur;s.th[idx]=curTh;s.dirty=true}save()}
+function setNb(v){
+  keySave();const s=R();let n=Math.max(1,Math.min(40,parseInt(v)||s.nb));
+  if(n!==s.nb){s.rep=s.rep.slice(0,n);while(s.rep.length<n)s.rep.push('');s.nb=n;ensureTh(s);s.dirty=true;save()}
+  idx=Math.min(idx,n-1);loadQ();render();
+}
+function keyGo(d){keySave();idx=Math.max(0,Math.min(R().nb-1,idx+d));loadQ();render()}
+function keyJump(i){keySave();idx=i;loadQ();render()}
+async function finishKey(){
+  keySave();
+  if(R().dirty){
+    if(db){msg='Envoi…';const ok=await pushOne(N);if(ok)msg='✔ Corrigé de la série '+N+' enregistré dans Firebase'}
+    else msg='Enregistré sur l\'appareil — à envoyer dès que Firebase est connecté';
+  }
+  mode='serie';render();
+}
+
+/* ----- PASSAGE ----- */
+function startQ(){
+  if(!done(R())){alert('Le corrigé de cette série est incomplet.');return}
+  mode='start';render();
+}
+function startView(){
+  return `<h1>Série ${N}</h1><div class="card"><div class="mut">Nom du candidat (facultatif)</div>
+  <input id="cn" placeholder="Candidat"><button class="g" style="width:100%" onclick="beginRun()">Commencer</button></div>
+  <button style="width:100%" onclick="go('serie')">Retour</button>`;
+}
+function beginRun(){cand=$('#cn').value.trim();answers=Array(R().nb).fill('');idx=0;cur='';mode='run';render()}
+function runView(){
+  const n=R().nb;
+  return `<div class="row" style="margin-top:14px"><b>${esc(cand||'Candidat')}</b><span class="mut" style="text-align:right">Série ${N}</span></div>
+  <div class="bar" style="margin:8px 0"><i style="width:${idx/n*100}%"></i></div>
+  <div class="card"><h2 style="text-align:center;margin:0">Question ${idx+1} / ${n}</h2><div class="big">${cur||'—'}</div>${pad()}
+  <div class="row"><button onclick="runGo(-1)" ${idx===0?'disabled':''}>◀</button><button onclick="cur='';render()">Effacer</button>
+  <button class="g" style="flex:2" onclick="runOk()">${idx===n-1?'Terminer ✔':'Valider ▶'}</button></div></div>`;
+}
+function runGo(d){answers[idx]=cur;idx+=d;cur=answers[idx];render()}
+function runOk(){
+  const s=R();answers[idx]=cur;
+  if(idx<s.nb-1){idx++;cur=answers[idx];render();return}
+  const un=answers.filter(a=>!a).length;
+  if(un&&!confirm(un+' question(s) sans réponse (comptées fausses). Terminer ?'))return;
+  const ok=answers.filter((a,i)=>a&&norm(a)===norm(s.rep[i])).length;
+  S.history.unshift({serie:N,cand:cand||'—',date:new Date().toLocaleString('fr-FR'),score:ok,n:s.nb,det:answers.map((a,i)=>[a,s.rep[i],themeName(s.th[i])])});
+  S.history=S.history.slice(0,100);save();mode='res';render();
+}
+
+/* ----- RÉSULTATS ----- */
+function detail(h){
+  const qs=h.det.map((d,i)=>({q:i+1,a:d[0],c:d[1],t:d[2]||'',ok:!!d[0]&&norm(d[0])===norm(d[1])}));
+  const bad=qs.filter(x=>!x.ok);
+  const th={};qs.forEach(x=>{const k=x.t||'Sans thème';th[k]=th[k]||{n:0,ok:0};th[k].n++;if(x.ok)th[k].ok++});
+  const keys=Object.keys(th).sort((a,b)=>(th[a].ok/th[a].n)-(th[b].ok/th[b].n));
+  const showTh=keys.length>1||(keys[0]&&keys[0]!=='Sans thème');
+  return `<div class="score ${bad.length<=h.n*0.2?'ok':'ko'}">${h.score} / ${h.n}</div>
+  <div class="mut" style="text-align:center">${h.n-h.score} faute(s)</div>
+  ${showTh?`<div class="card"><h2>Par thème <span class="mut">(les plus faibles d'abord)</span></h2>${keys.map(k=>`<div class="item"><span>${esc(k)}</span><b class="${th[k].ok===th[k].n?'ok':th[k].ok/th[k].n<0.6?'ko':''}">${th[k].ok} / ${th[k].n}</b></div>`).join('')}</div>`:''}
+  ${bad.length?`<div class="card"><h2>Questions fausses</h2>${bad.map(b=>`<div class="item"><span>Q${b.q}${b.t?`<br><span class="mut">${esc(b.t)}</span>`:''}</span><span class="ko">Réponse : ${b.a||'aucune'}</span><span class="ok">Bonne : ${b.c}</span></div>`).join('')}</div>`:'<div class="card ok" style="text-align:center">Sans faute 🎉</div>'}`;
+}
+function resView(){
+  const h=S.history[0];
+  return `<h1>Série ${h.serie} — ${esc(h.cand)}</h1>${detail(h)}
+  <div class="row" style="margin-bottom:30px"><button class="p" onclick="go('start')">Nouveau candidat</button><button onclick="go('home')">Accueil</button></div>`;
+}
+function histView(){
+  return `<h1>Historique</h1><div class="mut">Enregistré sur cet appareil.</div>${S.history.map(h=>`<div class="card" onclick="this.querySelector('.d').classList.toggle('hide')"><div class="item" style="border:0"><span><b>${esc(h.cand)}</b><br><span class="mut">Série ${h.serie} · ${h.date}</span></span><b class="${h.n-h.score<=h.n*0.2?'ok':'ko'}">${h.score}/${h.n}</b></div><div class="d hide">${detail(h)}</div></div>`).join('')||'<div class="mut">Aucun résultat.</div>'}
+  <div class="row" style="margin-bottom:30px"><button onclick="go('home')">Retour</button>${S.history.length?'<button class="r" onclick="if(confirm(\'Vider l\\\'historique ?\')){S.history=[];save();render()}">Vider</button>':''}</div>`;
+}
+
+/* ----- THÈMES ----- */
+const usage=id=>Object.values(S.series).reduce((a,s)=>a+(s.th||[]).filter(x=>x===id).length,0);
+function openThemes(from){themesBack=from;mode='themes';render()}
+function backThemes(){if(themesBack==='key'){loadQ();mode='key'}else mode='home';render()}
+function themesView(){
+  return `<h1>🏷 Thèmes</h1>${statusBar()}
+  <div class="card"><div class="row" style="flex-wrap:nowrap"><input id="tn" placeholder="Nouveau thème (ex : Priorité)" style="flex:4"><button class="g" style="flex:1" onclick="addTheme()">＋</button></div></div>
+  <div class="card">${S.themes.map(x=>`<div class="item" style="align-items:center"><span>${esc(x.nom)}<span class="mut"> · ${usage(x.id)} question(s)</span></span><span style="white-space:nowrap"><button onclick="renTheme('${x.id}')">✏</button> <button class="r" onclick="delTheme('${x.id}')">🗑</button></span></div>`).join('')||'<div class="mut">Aucun thème. Ajoute-en un ci-dessus.</div>'}</div>
+  <button style="width:100%;margin-bottom:30px" onclick="backThemes()">Retour</button>`;
+}
+async function addTheme(){
+  const n=$('#tn').value.trim();if(!n)return;
+  if(S.themes.some(x=>x.nom.toLowerCase()===n.toLowerCase())){alert('Ce thème existe déjà.');return}
+  const k=Math.max(0,...S.themes.map(x=>parseInt(x.id.slice(1))||0))+1;
+  S.themes.push({id:'t'+k,nom:n});S.thDirty=true;await pushThemes();render();
+}
+async function renTheme(id){
+  const x=S.themes.find(y=>y.id===id);const n=prompt('Nouveau nom du thème',x.nom);
+  if(!n||!n.trim())return;x.nom=n.trim();S.thDirty=true;await pushThemes();render();
+}
+async function delTheme(id){
+  if(usage(id)){alert('Ce thème est utilisé par '+usage(id)+' question(s). Change d\'abord leur thème.');return}
+  if(!confirm('Supprimer ce thème ?'))return;
+  S.themes=S.themes.filter(x=>x.id!==id);S.thDirty=true;await pushThemes();render();
+}
+
+/* ----- CONFIG FIREBASE ----- */
+function cfgView(){
+  const c=FIREBASE_CONFIG||loadCfg();
+  return `<h1>⚙ Connexion Firebase</h1><div class="card"><div class="mut">Colle ici la config de ton projet Firebase (Console → Paramètres du projet → Tes applications → Web → firebaseConfig).</div>
+  <textarea id="cfgt" rows="9" placeholder='const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "...", ... }'></textarea>
+  <button class="g" style="width:100%" onclick="saveCfg()">Enregistrer et connecter</button>
+  ${c?`<div class="mut" style="margin-top:8px">Projet actuel : <b>${esc(c.projectId)}</b></div>`:''}</div>
+  <div class="row" style="margin-bottom:30px"><button onclick="go('home')">Retour</button>${c&&!FIREBASE_CONFIG?'<button class="r" onclick="localStorage.removeItem(\'achkoun_fbcfg\');initFB();render()">Déconnecter</button>':''}</div>`;
+}
+function saveCfg(){
+  const c=parseCfg($('#cfgt').value);
+  if(!c){alert('Config non reconnue : il faut au moins apiKey et projectId.');return}
+  try{localStorage.setItem('achkoun_fbcfg',JSON.stringify(c))}catch(e){}
+  S.lastSync=0;save();initFB();mode='home';render();sync();
+}
+
+/* ----- Clavier physique ----- */
+document.addEventListener('keydown',e=>{
+  if(!['key','run'].includes(mode)||['INPUT','TEXTAREA'].includes(e.target.tagName))return;
+  if(['1','2','3','4'].includes(e.key))tog(e.key);
+  else if(e.key==='Backspace'){cur='';render()}
+  else if(e.key==='Enter'){mode==='run'?runOk():keyGo(1)}
+});
+
+initFB();render();
+if(db)sync();
+</script>
+</body>
+</html>
